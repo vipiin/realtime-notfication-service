@@ -1,0 +1,42 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notification Service</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
+</head>
+<body>
+    <h2>Realtime notification service</h2>
+    <div id="status">Disconnected</div>
+    <input type="text" name="" placeholder="Your name" id="user"/>
+    <input type="text" name=""  placeholder="Message" id="message"/>
+    <button onclick="sendMessage()">Send</button>
+    <div id="messages"></div>
+    <script>
+        let stopmClient=null;
+        const user=new URLSearchParams(window.location.search).get('user') || 'Anonymous';
+        document.getElementById('user').value=user;
+        function connect(){
+            const socket=new SockJS('/ws');
+            stopmClient=Stomp.over(socket);
+            stopmClient.connect({},function(frame){
+                document.getElementById('status').innerText='Connected: '+frame;
+                stopmClient.subscribe('/topic/messages',function(messages){
+                    const msgDiv=document.createElement('div');
+                    msgDiv.innerText=new Date().toLocaleDateString() + ' - ' + messages.body;
+                    document.getElementById('messages').prepend(msgDiv);
+                });
+            });
+        }
+        function sendMessage(){
+            const msg=document.getElementById('user').value+': '+
+                        document.getElementById('message').value;
+                        stopmClient.send('/app/send',{},msg);
+                        document.getElementById('message').value='';
+        }
+        connect();
+    </script>
+</body>
+</html>
