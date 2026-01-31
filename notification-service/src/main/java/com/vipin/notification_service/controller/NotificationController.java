@@ -1,6 +1,7 @@
 package com.vipin.notification_service.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
@@ -17,10 +18,13 @@ public class NotificationController {
     @Autowired 
     StringRedisTemplate redisTemplate;
 
+    @Value("${server.port}")
+    private String serverPort;
+
     @MessageMapping("/send")
     @SendTo("/topic/messages")
     public void handleMessage(@Payload String message){
-        System.out.println("Received: "+ message+" on instance: "+ System.getProperty("server.port", "8080"));
+        System.out.println("Received: "+ message+" on instance: "+ serverPort);
         redisTemplate.convertAndSend("chat", message);
         // simpMessagingTemplate.convertAndSend("/topic/messages",message);
     }
