@@ -1,42 +1,451 @@
+<!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Notification Service</title>
+    <title>SkyLine | Real-time Notifications</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --bg-dark: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
 
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            color: var(--text-main);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 600px;
+            height: 80vh;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            padding: 24px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        h2 {
+            margin: 0;
+            font-weight: 600;
+            font-size: 1.5rem;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        #status {
+            font-size: 0.8rem;
+            padding: 4px 12px;
+            border-radius: 12px;
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            transition: all 0.3s ease;
+        }
+
+        #status.connected {
+            background: rgba(34, 197, 94, 0.2);
+            color: #86efac;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        input {
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            color: white;
+            flex: 1;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 24px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding-right: 8px;
+        }
+
+        #messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #messages::-webkit-scrollbar-thumb {
+            background: var(--glass-border);
+            border-radius: 3px;
+        }
+
+        .message-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 12px 16px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        /* Toast Styles */
+        .toast {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            background: #6366f1;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: toastIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        @keyframes toastIn {
+            from {
+                transform: translateX(100%) scale(0.5);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0) scale(1);
+                opacity: 1;
+            }
+        }
+
+        .test-panel {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            font-size: 0.8rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Login Overlay */
+        #join-overlay {
+            position: fixed;
+            inset: 0;
+            background: var(--bg-dark);
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(20px);
+        }
+
+        .join-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 40px;
+            border-radius: 32px;
+            text-align: center;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        .join-card h1 {
+            margin-bottom: 24px;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
 </head>
+
 <body>
-    <h2>Realtime notification service</h2>
-    <div id="status">Disconnected</div>
-    <input type="text" name="" placeholder="Your name" id="user"/>
-    <input type="text" name=""  placeholder="Message" id="message"/>
-    <button onclick="sendMessage()">Send</button>
-    <div id="messages"></div>
+    <div id="join-overlay">
+        <div class="join-card">
+            <h1>Welcome to SkyLine</h1>
+            <input type="text" id="join-username" placeholder="Enter your name..."
+                onkeydown="if(event.key==='Enter') joinChat()"
+                style="width: 100%; margin-bottom: 20px; box-sizing: border-box;">
+            <button onclick="joinChat()" style="width: 100%;">Join Discussion</button>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+    <div class="container hidden" id="main-container">
+        <header>
+            <h2>SkyLine</h2>
+            <div id="status">Connecting...</div>
+        </header>
+
+        <div class="input-group">
+            <input type="text" id="user" placeholder="Name" readonly
+                style="flex: 0 0 100px; background: transparent; border-color: transparent; opacity: 0.7;">
+            <input type="text" id="message" placeholder="Type a message..."
+                onkeydown="if(event.key==='Enter') sendMessage()">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+
+        <div id="typing-indicator"
+            style="font-size: 0.8rem; color: var(--text-muted); height: 20px; margin-bottom: 4px;"></div>
+        <div id="messages"></div>
+
+        <div class="test-panel">
+            <span>Interview Mode: Test private notification</span>
+            <button onclick="testTargetedNotification()"
+                style="padding: 6px 12px; font-size: 0.75rem; background: rgba(255,255,255,0.1);">
+                Trigger Notification
+            </button>
+        </div>
+    </div>
+
     <script>
-        let stopmClient=null;
-        const user=new URLSearchParams(window.location.search).get('user') || 'Anonymous';
-        document.getElementById('user').value=user;
-        function connect(){
-            const socket=new SockJS('/ws');
-            stopmClient=Stomp.over(socket);
-            stopmClient.connect({},function(frame){
-                document.getElementById('status').innerText='Connected: '+frame;
-                stopmClient.subscribe('/topic/messages',function(messages){
-                    const msgDiv=document.createElement('div');
-                    msgDiv.innerText=new Date().toLocaleDateString() + ' - ' + messages.body;
-                    document.getElementById('messages').prepend(msgDiv);
+        let stompClient = null;
+        let currentUser = null;
+
+        function joinChat() {
+            const input = document.getElementById('join-username');
+            const name = input.value.trim();
+            if (name) {
+                currentUser = name;
+                document.getElementById('user').value = name;
+                document.getElementById('join-overlay').classList.add('hidden');
+                document.getElementById('main-container').classList.remove('hidden');
+                connect();
+            }
+        }
+
+        function connect() {
+            console.log("Attempting to connect as:", currentUser);
+            const socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
+            stompClient.debug = function (str) { console.log("STOMP:", str); };
+
+            stompClient.connect({ username: currentUser }, function (frame) {
+                console.log("Connected to STOMP");
+                const status = document.getElementById('status');
+                status.innerText = 'Online';
+                status.classList.add('connected');
+
+                // Subscribe to public messages
+                stompClient.subscribe('/topic/messages', function (response) {
+                    console.log("Received message:", response.body);
+                    let data;
+                    try {
+                        data = JSON.parse(response.body);
+                    } catch (e) {
+                        data = response.body;
+                    }
+
+                    // NEW: Show toast for messages from other users
+                    if (data && data.sender && data.sender !== currentUser) {
+                        showToast(`From ${data.sender}: ${data.message}`);
+                    }
+
+                    appendMessage(data);
                 });
+
+                // Subscribe to private notifications
+                stompClient.subscribe('/user/topic/notifications', function (response) {
+                    console.log("Received private notification:", response.body);
+                    showToast(response.body);
+                });
+
+                stompClient.subscribe('/topic/presence', function (message) {
+                    const parts = message.body.split(':');
+                    const typingUser = parts[0];
+                    const status = parts[1];
+
+                    if (typingUser !== currentUser) {
+                        const indicator = document.getElementById('typing-indicator');
+                        if (status === 'TYPING') {
+                            indicator.innerText = typingUser + ' is typing...';
+                        } else {
+                            indicator.innerText = '';
+                        }
+                    }
+                });
+
+                fetch('/api/history')
+                    .then(res => res.json())
+                    .then(history => {
+                        console.log("Loaded history:", history);
+                        const container = document.getElementById('messages');
+                        container.innerHTML = '';
+                        history.reverse().forEach(msg => {
+                            appendMessage(msg);
+                        });
+                        container.scrollTop = container.scrollHeight;
+                    });
+            }, function (error) {
+                console.error("STOMP error:", error);
+                const status = document.getElementById('status');
+                status.innerText = 'Disconnected';
+                status.classList.remove('connected');
+                setTimeout(connect, 5000);
             });
         }
-        function sendMessage(){
-            const msg=document.getElementById('user').value+': '+
-                        document.getElementById('message').value;
-                        stopmClient.send('/app/send',{},msg);
-                        document.getElementById('message').value='';
+
+        function showToast(text) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                <span>${text}</span>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.animation = 'toastIn 0.5s reverse forwards';
+                setTimeout(() => toast.remove(), 500);
+            }, 5000);
         }
-        connect();
+
+        function testTargetedNotification() {
+            fetch(`/api/notify?user=${currentUser}&message=Private Alert for ${currentUser}!`)
+                .then(res => res.text())
+                .then(txt => console.log("Test notification triggered:", txt));
+        }
+
+        function appendMessage(msg) {
+            if (typeof msg === 'string') {
+                try { msg = JSON.parse(msg); } catch (e) { }
+            }
+
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message-card';
+
+            let sender = 'System';
+            let message = '';
+            let time = '';
+
+            if (typeof msg === 'object' && msg !== null) {
+                sender = msg.sender || 'Anonymous';
+                message = msg.message || '';
+                time = msg.createdAt ? formatTime(msg.createdAt) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } else {
+                message = String(msg);
+                time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+
+            if (sender === 'System' && message.includes(': ')) {
+                const parts = message.split(': ');
+                sender = parts[0];
+                message = parts.slice(1).join(': ');
+            }
+
+            const isMe = (sender === currentUser);
+            const displaySender = isMe ? 'You' : sender;
+            const senderClass = isMe ? 'sender you' : 'sender';
+
+            msgDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="${senderClass}">${displaySender}</span>
+                    <span class="time">${time}</span>
+                </div>
+                <div class="message-body">${message}</div>
+            `;
+
+            const container = document.getElementById('messages');
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function formatTime(isoString) {
+            try {
+                const date = new Date(isoString);
+                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } catch (e) { return ''; }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('message');
+            const msg = input.value.trim();
+            if (msg && stompClient) {
+                stompClient.send('/app/send', {}, msg);
+                input.value = '';
+                notifyTyping(false);
+            }
+        }
+
+        let typingTimeout;
+        document.getElementById('message').addEventListener('input', function () {
+            notifyTyping(true);
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => notifyTyping(false), 3000);
+        });
+
+        function notifyTyping(isTyping) {
+            if (stompClient && stompClient.connected) {
+                stompClient.send('/app/typing', {}, isTyping ? 'TYPING' : 'STOPPED');
+            }
+        }
     </script>
 </body>
+
 </html>
