@@ -220,10 +220,44 @@
         .hidden {
             display: none !important;
         }
+
+        /* Server Info Badge */
+        .server-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 0.7rem;
+            padding: 4px 8px;
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 8px;
+            color: #a5b4fc;
+        }
+
+        /* Failover button */
+        .failover-btn {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            font-size: 0.7rem;
+            padding: 6px 12px;
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            color: #fca5a5;
+            cursor: pointer;
+            display: none;
+        }
+
+        .failover-btn.show {
+            display: block;
+        }
     </style>
 </head>
 
 <body>
+    <div class="server-badge" id="server-info">Server: Auto-selecting...</div>
+    <button class="failover-btn" id="failover-btn" onclick="manualFailover()">Switch Server</button>
+
     <div id="join-overlay">
         <div class="join-card">
             <h1>Welcome to SkyLine</h1>
@@ -263,8 +297,54 @@
     </div>
 
     <script>
+        // ==========================================
+        // LOAD BALANCER CONFIGURATION
+        // ==========================================
+        const SERVERS = [
+            {
+                id: 'Back4App',
+                url: 'https://realtimenotificationservice-1967n6ji.b4a.run',
+                region: 'US-East'
+            },
+            {
+                id: 'Northflank',
+                url: 'https://p01--realtime-notfication-service--j5l6scymyf9r.code.run',
+                region: 'EU-West'
+            }
+        ];
+
+        let currentServerIndex = Math.floor(Math.random() * SERVERS.length);
+        let currentServer = SERVERS[currentServerIndex];
         let stompClient = null;
         let currentUser = null;
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 3;
+        let messageHistoryLoaded = false;
+
+        function updateServerBadge() {
+            const badge = document.getElementById('server-info');
+            badge.textContent = `Server: ${currentServer.id} (${currentServer.region})`;
+            badge.style.background = currentServer.id === 'Back4App' 
+                ? 'rgba(99, 102, 241, 0.3)' 
+                : 'rgba(34, 197, 94, 0.3)';
+        }
+
+        function showFailoverButton() {
+            document.getElementById('failover-btn').classList.add('show');
+        }
+
+        function manualFailover() {
+            currentServerIndex = (currentServerIndex + 1) % SERVERS.length;
+            currentServer = SERVERS[currentServerIndex];
+            updateServerBadge();
+            showToast(`Switched to ${currentServer.id} server`);
+            
+            // Reconnect
+            if (stompClient) {
+                stompClient.disconnect();
+            }
+            setTimeout(connect, 500);
+        }
 
         function joinChat() {
             const input = document.getElementById('join-username');
@@ -279,74 +359,136 @@
         }
 
         function connect() {
-            console.log("Attempting to connect as:", currentUser);
-            const socket = new SockJS('/ws');
+            console.log("Attempting to connect to:", currentServer.url);
+            updateServerBadge();
+            
+            const status = document.getElementById('status');
+            status.innerText = `Connecting to ${currentServer.id}...`;
+            status.classList.remove('connected');
+
+            // Use SockJS with absolute URL
+            const socket = new SockJS(`${currentServer.url}/ws`);
             stompClient = Stomp.over(socket);
             stompClient.debug = function (str) { console.log("STOMP:", str); };
 
-            stompClient.connect({ username: currentUser }, function (frame) {
-                console.log("Connected to STOMP");
-                const status = document.getElementById('status');
-                status.innerText = 'Online';
-                status.classList.add('connected');
+            stompClient.connect(
+                { username: currentUser }, 
+                function (frame) {
+                    console.log("Connected to STOMP on", currentServer.id);
+                    status.innerText = `Online (${currentServer.id})`;
+                    status.classList.add('connected');
+                    reconnectAttempts = 0;
+                    messageHistoryLoaded = false;
 
-                // Subscribe to public messages
-                stompClient.subscribe('/topic/messages', function (response) {
-                    console.log("Received message:", response.body);
-                    let data;
-                    try {
-                        data = JSON.parse(response.body);
-                    } catch (e) {
-                        data = response.body;
-                    }
-
-                    // NEW: Show toast for messages from other users
-                    if (data && data.sender && data.sender !== currentUser) {
-                        showToast(`From ${data.sender}: ${data.message}`);
-                    }
-
-                    appendMessage(data);
-                });
-
-                // Subscribe to private notifications
-                stompClient.subscribe('/user/topic/notifications', function (response) {
-                    console.log("Received private notification:", response.body);
-                    showToast(response.body);
-                });
-
-                stompClient.subscribe('/topic/presence', function (message) {
-                    const parts = message.body.split(':');
-                    const typingUser = parts[0];
-                    const status = parts[1];
-
-                    if (typingUser !== currentUser) {
-                        const indicator = document.getElementById('typing-indicator');
-                        if (status === 'TYPING') {
-                            indicator.innerText = typingUser + ' is typing...';
-                        } else {
-                            indicator.innerText = '';
+                    // Subscribe to public messages
+                    stompClient.subscribe('/topic/messages', function (response) {
+                        console.log("Received message:", response.body);
+                        let data;
+                        try {
+                            data = JSON.parse(response.body);
+                        } catch (e) {
+                            data = response.body;
                         }
-                    }
-                });
 
-                fetch('/api/history')
-                    .then(res => res.json())
-                    .then(history => {
-                        console.log("Loaded history:", history);
-                        const container = document.getElementById('messages');
-                        container.innerHTML = '';
-                        history.reverse().forEach(msg => {
-                            appendMessage(msg);
-                        });
-                        container.scrollTop = container.scrollHeight;
+                        if (data && data.sender && data.sender !== currentUser) {
+                            showToast(`From ${data.sender}: ${data.message}`);
+                        }
+                        appendMessage(data);
                     });
-            }, function (error) {
-                console.error("STOMP error:", error);
-                const status = document.getElementById('status');
-                status.innerText = 'Disconnected';
-                status.classList.remove('connected');
-                setTimeout(connect, 5000);
-            });
+
+                    // Subscribe to private notifications
+                    stompClient.subscribe('/user/topic/notifications', function (response) {
+                        console.log("Received private notification:", response.body);
+                        showToast(response.body);
+                    });
+
+                    // Subscribe to presence
+                    stompClient.subscribe('/topic/presence', function (message) {
+                        const parts = message.body.split(':');
+                        const typingUser = parts[0];
+                        const status = parts[1];
+
+                        if (typingUser !== currentUser) {
+                            const indicator = document.getElementById('typing-indicator');
+                            if (status === 'TYPING') {
+                                indicator.innerText = typingUser + ' is typing...';
+                            } else {
+                                indicator.innerText = '';
+                            }
+                        }
+                    });
+
+                    // Load history from the same server
+                    loadMessageHistory();
+                }, 
+                function (error) {
+                    console.error("STOMP error on", currentServer.id, ":", error);
+                    handleConnectionError();
+                }
+            );
+
+            // Handle connection close
+            socket.onclose = function() {
+                console.log("Socket closed for", currentServer.id);
+                if (reconnectAttempts === 0) {
+                    handleConnectionError();
+                }
+            };
+        }
+
+        function handleConnectionError() {
+            const status = document.getElementById('status');
+            reconnectAttempts++;
+            
+            if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+                // Try next server
+                currentServerIndex = (currentServerIndex + 1) % SERVERS.length;
+                currentServer = SERVERS[currentServerIndex];
+                
+                status.innerText = `Failover to ${currentServer.id}...`;
+                showToast(`Connection failed. Trying ${currentServer.id}...`);
+                showFailoverButton();
+                
+                setTimeout(connect, 1000);
+            } else {
+                status.innerText = 'All servers failed';
+                status.style.background = 'rgba(239, 68, 68, 0.4)';
+                showToast('❌ All servers unavailable. Try again later.');
+            }
+        }
+
+        function loadMessageHistory() {
+            if (messageHistoryLoaded) return;
+            
+            fetch(`${currentServer.url}/api/history`)
+                .then(res => {
+                    if (!res.ok) throw new Error('History fetch failed');
+                    return res.json();
+                })
+                .then(history => {
+                    console.log("Loaded history from", currentServer.id, ":", history);
+                    const container = document.getElementById('messages');
+                    container.innerHTML = '';
+                    history.reverse().forEach(msg => {
+                        appendMessage(msg);
+                    });
+                    container.scrollTop = container.scrollHeight;
+                    messageHistoryLoaded = true;
+                })
+                .catch(err => {
+                    console.error("Failed to load history:", err);
+                    // Try other server for history if this one fails
+                    const otherServer = SERVERS[(currentServerIndex + 1) % SERVERS.length];
+                    fetch(`${otherServer.url}/api/history`)
+                        .then(res => res.json())
+                        .then(history => {
+                            const container = document.getElementById('messages');
+                            container.innerHTML = '';
+                            history.reverse().forEach(msg => appendMessage(msg));
+                            messageHistoryLoaded = true;
+                        })
+                        .catch(() => console.error("Both servers failed to provide history"));
+                });
         }
 
         function showToast(text) {
@@ -367,9 +509,10 @@
         }
 
         function testTargetedNotification() {
-            fetch(`/api/notify?user=${currentUser}&message=Private Alert for ${currentUser}!`)
+            fetch(`${currentServer.url}/api/notify?user=${currentUser}&message=Private Alert for ${currentUser}!`)
                 .then(res => res.text())
-                .then(txt => console.log("Test notification triggered:", txt));
+                .then(txt => console.log("Test notification triggered:", txt))
+                .catch(err => console.error("Notification failed:", err));
         }
 
         function appendMessage(msg) {
@@ -401,14 +544,13 @@
 
             const isMe = (sender === currentUser);
             const displaySender = isMe ? 'You' : sender;
-            const senderClass = isMe ? 'sender you' : 'sender';
 
             msgDiv.innerHTML = `
-                <div class="message-header">
-                    <span class="${senderClass}">${displaySender}</span>
-                    <span class="time">${time}</span>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                    <span style="font-weight: ${isMe ? '600' : '400'}; color: ${isMe ? '#818cf8' : '#c084fc'}">${displaySender}</span>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">${time}</span>
                 </div>
-                <div class="message-body">${message}</div>
+                <div style="color: var(--text-main);">${message}</div>
             `;
 
             const container = document.getElementById('messages');
@@ -426,7 +568,7 @@
         function sendMessage() {
             const input = document.getElementById('message');
             const msg = input.value.trim();
-            if (msg && stompClient) {
+            if (msg && stompClient && stompClient.connected) {
                 stompClient.send('/app/send', {}, msg);
                 input.value = '';
                 notifyTyping(false);
