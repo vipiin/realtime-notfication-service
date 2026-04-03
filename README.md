@@ -49,7 +49,7 @@ graph TD
         App2("🚀 Spring Boot App 2<br/>(e.g., Northflank)"):::app
     end
 
-    Redis[("📡 Redis Pub/Sub<br/>(Cross-server Sync)") ]:::redis
+    Redis[("📡 Redis Pub/Sub<br/>(Cross-server Sync)")]:::redis
     Postgres[("🗄️ PostgreSQL<br/>(Message History Database)")]:::db
 
     %% Connections
