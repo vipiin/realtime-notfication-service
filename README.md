@@ -43,8 +43,7 @@ graph TD
     C1("💻 User Browser A"):::client
     C2("📱 User Browser B"):::client
 
-    subgraph Server Cloud / Local Docker Deployment
-        Nginx{"⚖️ Nginx Load Balancer<br/>(Optional/Local Routing)"}:::proxy
+    subgraph Deployed Backend Cloud
         App1("🚀 Spring Boot App 1<br/>(e.g., Back4App)"):::app
         App2("🚀 Spring Boot App 2<br/>(e.g., Northflank)"):::app
     end
@@ -55,9 +54,6 @@ graph TD
     %% Connections
     C1 -- "WebSocket (STOMP)\nAutomatic Failover" --> App1
     C2 -- "WebSocket (STOMP)\nClient-side Load Balancing" --> App2
-    
-    C1 -. "Local Docker Route" .-> Nginx
-    Nginx -.-> App1 & App2
     
     App1 -- "1. Publish Message\nto Radio Channel" --> Redis
     Redis -- "2. Broadcast to\nSubscribed Servers" --> App2
