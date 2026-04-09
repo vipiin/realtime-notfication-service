@@ -62,7 +62,8 @@ graph TD
     App1 -- "Save Msg History" --> Postgres
     App2 -- "Save Msg History" --> Postgres
 ```
-###Map: payload origin → Redis channel → RedisMessageSubscriber handling → STOMP destination(s) → client subscription
+###
+```Map: payload origin → Redis channel → RedisMessageSubscriber handling → STOMP destination(s) → client subscription
 
 Chat messages (send)
 Client STOMP send:
@@ -131,3 +132,4 @@ Subscribe to show updates:
 Subscribe: /topic/messages → receives ChatMessage objects
 Subscribe: /topic/presence → receives "username:status" entries for typing
 Subscribe: /user/topic/notifications → receives user-specific notifications
+```
