@@ -62,3 +62,72 @@ graph TD
     App1 -- "Save Msg History" --> Postgres
     App2 -- "Save Msg History" --> Postgres
 ```
+###Map: payload origin → Redis channel → RedisMessageSubscriber handling → STOMP destination(s) → client subscription
+
+Chat messages (send)
+Client STOMP send:
+Destination the client sends to: /app/send
+Payload: a raw string (message text) — controller receives @Payload String message
+CONNECT must include header username so server knows sender
+Server controller (NotificationController.handleMessage):
+Reads username from session attributes (set by CustomHandshakeInterceptor)
+Persists: messageService.saveMessage(sender, message) → returns ChatMessage {sender, message, createdAt, id...}
+Converts saved ChatMessage to JSON
+Publishes to Redis channel: "chat" (redisTemplate.convertAndSend("chat", jsonMessage))
+Redis subscriber (RedisMessageSubscriber.onMessage):
+Channel = "chat" → falls into the else branch (not "presence" or "notifications")
+Parses JSON into ChatMessage, then:
+messagingTemplate.convertAndSend("/topic/messages", chatMessage)
+Client(s):
+Should subscribe to: /topic/messages
+They receive ChatMessage objects (sender, message, createdAt, …)
+Summary flow: Client → STOMP SEND /app/send (payload: text) → NotificationController → save → Redis channel "chat" → RedisMessageSubscriber → convertAndSend("/topic/messages", ChatMessage) → Clients subscribed to /topic/messages
+
+Typing indicators (presence)
+Client STOMP send:
+Destination: /app/typing
+Payload: a String status (e.g., "true" / "false" or "start"/"stop") — controller signature is @Payload String status
+CONNECT header must include username (so controller can retrieve username)
+Server controller (NotificationController.handleTyping):
+Reads username from session attributes
+Forms a simple string payload: username + ":" + status (e.g., "alice:true")
+Publishes to Redis channel: "presence" (redisTemplate.convertAndSend("presence", typingMessage))
+Redis subscriber:
+Channel == "presence" → messagingTemplate.convertAndSend("/topic/presence", body) (body is "username:status")
+Client(s):
+Should subscribe to: /topic/presence
+They receive raw "username:status" strings (client parses to show "Alice is typing..." or remove indicator)
+Summary flow: Client → STOMP SEND /app/typing (payload: "true"/"false") → NotificationController → redis "presence" ("username:status") → RedisMessageSubscriber → convertAndSend("/topic/presence", "username:status") → Clients subscribed to /topic/presence
+
+Server-to-user notifications (simulated API)
+External call: GET /api/notify?user={user}&message={message}
+NotificationController.notifyUser builds NotificationPayload {user,message} JSON
+Publishes to Redis channel: "notifications" (redisTemplate.convertAndSend("notifications", json))
+Redis subscriber:
+Channel == "notifications" → parse JSON into NotificationData {user, message}
+Uses convertAndSendToUser(data.user, "/topic/notifications", data.message)
+Because WebSocketConfig setUserDestinationPrefix("/user"), convertAndSendToUser will route to the connected session for that user under the user destination mapping.
+Client (specific user):
+Should subscribe to: /user/topic/notifications (or subscribe to the user destination shorthand "/user/topic/notifications" in STOMP client)
+They receive the message payload directly for that user only
+Summary flow: External → HTTP GET /api/notify → redis "notifications" (JSON {user,message}) → RedisMessageSubscriber → convertAndSendToUser(user, "/topic/notifications", message) → Client subscribed to /user/topic/notifications
+
+WebSocket / STOMP connection details (how clients connect & headers)
+
+STOMP endpoint: SockJS endpoint at /ws (registry.addEndpoint("/ws").withSockJS())
+Application destination prefix: /app (so client sends to /app/...)
+Broker destinations: /topic, /queue (enabled by enableSimpleBroker)
+User destination prefix: /user (used by convertAndSendToUser)
+Authentication/identification: Client must include header "username" on STOMP CONNECT; CustomHandshakeInterceptor reads it and sets session attribute "username" and the Principal (StompPrincipal) so convertAndSendToUser works.
+Concrete STOMP client examples
+
+Send message:
+STOMP SEND destination: /app/send
+Body: "hello world"
+Send typing:
+STOMP SEND destination: /app/typing
+Body: "true" (or "stop")
+Subscribe to show updates:
+Subscribe: /topic/messages → receives ChatMessage objects
+Subscribe: /topic/presence → receives "username:status" entries for typing
+Subscribe: /user/topic/notifications → receives user-specific notifications
